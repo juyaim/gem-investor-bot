@@ -3,7 +3,7 @@ import requests
 import re
 from bs4 import BeautifulSoup
 
-# 1. 數據根源配置 (修正重複鍵值，改用更精確的定義)
+# 1. 數據根源配置 (修正重複，區分功能)
 SOURCE_MAP = {
     "原油": "https://www.macromicro.me/collections/19/mm-oil-price/182/mm-oil-expectation-index",
     "台灣出口": "https://www.macromicro.me/collections/13/tw-trade-relative/118/tw-exports-yoy",
@@ -17,70 +17,51 @@ SOURCE_MAP = {
 }
 
 def get_relevant_links(query):
-    """偵測關鍵字與股號，動態生成連結"""
+    """偵測關鍵字與 4 位數股號，自動關聯連結"""
     links = []
-    
-    # 自動偵測 4 位數台灣股號 (如 2317, 6669)
+    # 自動偵測台灣股號 (Regex)
     stock_ids = re.findall(r'\d{4}', query)
     for sid in stock_ids:
         links.append(f"- [MOPS {sid} 財務即時看板](https://mops.twse.com.tw/mops/web/t05st03?stock_id={sid})")
 
-    # 關鍵字匹配數據源
+    # 關鍵字匹配
     for key, url in SOURCE_MAP.items():
         if key in query:
             links.append(f"- [{key} 數據源]({url})")
-            
     return "\n".join(links) if links else "- [通用數據源](https://www.macromicro.me/)"
 
 def ai_analysis(query, raw_data):
-    """GEM 投資判斷核心邏輯"""
+    """GEM 投資判斷三層思考邏輯"""
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "⚠️ 錯誤：環境變數中找不到 GEMINI_API_KEY"
+    if not api_key: return "⚠️ 找不到 API Key"
 
-    # 使用 1.5 Flash 模型，反應速度更快且免費額度充足
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
     主題：{query}
-    參考數據：{raw_data[:2000]}
+    參考資訊：{raw_data[:2000]}
     
     請以『GEM 投資判斷機器人』身份執行分析：
     ### 🎯 核心分析報告
-    1. **[第一層：市場直覺]** (描述表面現象與大眾心理)
-    2. **[第二層：產業實相]** (分析企業痛點、成本轉嫁與補償機制)
-    3. **[第三層：供應鏈佈局]** (精確點名台灣受惠/受害類股)
-    4. **[⏳ 佈局時機點評]** (分析目前是過熱還是潛在機會)
+    1. **[第一層：市場直覺]** (大眾心理與表面現象)
+    2. **[第二層：產業實相]** (企業痛點與訂單轉移邏輯)
+    3. **[第三層：供應鏈佈局]** (點名台灣受惠/受害類股)
+    4. **[⏳ 佈局時機點評]** (目前資訊透明度與進場判斷)
     """
     
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
     try:
-        response = requests.post(url, json=payload, timeout=20)
-        response.raise_for_status() # 若 API 回傳錯誤碼則觸發 except
+        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
         return response.json()['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        return f"❌ AI 分析執行失敗，原因：{str(e)}"
+        return f"❌ 分析失敗：{str(e)}"
 
 if __name__ == "__main__":
-    # 預設執行主題
-    query_topic = os.getenv("USER_QUERY", "原油通膨與 2317 鴻海") 
+    query_topic = os.getenv("USER_QUERY", "2317 鴻海 AI伺服器展望") 
+    dummy_data = "近期法說會強調 AI 伺服器需求強勁，GB200 訂單量產時程提前..."
     
-    print(f"🚀 正在優化分析：{query_topic}...")
-    
-    # 模擬或接入真實數據 (此處可替換為爬蟲獲取的內容)
-    sample_data = "近期原油價格波動劇烈，且電子權值股法說會釋出正向展望..."
-    
-    # 執行分析與連結獲取
-    report = ai_analysis(query_topic, sample_data)
+    report = ai_analysis(query_topic, dummy_data)
     source_links = get_relevant_links(query_topic)
     
-    # 儲存報告
-    report_content = f"# 📅 GEM 投資判斷報告\n\n**分析主題：** {query_topic}\n\n{report}\n\n"
-    report_content += "---\n### 📡 數據根源與監控網址\n"
-    report_content += source_links
-    
     with open("DAILY_REPORT.md", "w", encoding="utf-8") as f:
-        f.write(report_content)
-        
-    print("✅ 程式執行完畢，報告已更新至 DAILY_REPORT.md")
+        f.write(f"# 📅 GEM 投資報告 - {query_topic}\n\n{report}\n\n---\n### 📡 數據根源\n{source_links}")
+    print("✅ DAILY_REPORT.md 已更新。")
